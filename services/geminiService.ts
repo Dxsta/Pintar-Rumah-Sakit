@@ -2,7 +2,13 @@ import { GoogleGenAI, Tool } from '@google/genai';
 import { AgentType, Message } from '../types';
 import { AGENTS, ROUTER_TOOLS, DOC_GEN_TOOL } from '../constants';
 
-const getApiKey = () => process.env.API_KEY || '';
+// Safe access to API Key
+const getApiKey = () => {
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  return '';
+};
 
 // 1. Router: Menganalisis Intent dan Memilih Agen
 export const routeUserIntent = async (userMessage: string): Promise<AgentType> => {

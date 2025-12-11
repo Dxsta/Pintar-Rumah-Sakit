@@ -7,6 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
       body {
         font-family: 'Inter', sans-serif;
       }
@@ -37,7 +42,18 @@
         to { transform: translateY(0); }
       }
     </style>
-  <script type="importmap">
+    
+    <!-- CRITICAL FIX: Polyfill for process.env to prevent "process is not defined" crash in browser -->
+    <script>
+      window.process = {
+        env: {
+          NODE_ENV: 'production'
+          // API_KEY will be injected here by the build tool or remain undefined (handled in App.tsx)
+        }
+      };
+    </script>
+
+    <script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@18.2.0",
@@ -50,9 +66,9 @@
   }
 }
 </script>
-</head>
+  </head>
   <body class="bg-slate-50 text-slate-900 antialiased">
-    <div id="root"></div>
+    <div id="root" class="h-full"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
