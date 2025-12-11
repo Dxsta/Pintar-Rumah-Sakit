@@ -2,17 +2,16 @@ import { GoogleGenAI, Tool } from '@google/genai';
 import { AgentType, Message } from '../types';
 import { AGENTS, ROUTER_TOOLS, DOC_GEN_TOOL } from '../constants';
 
-// Helper to get API Key
 const getApiKey = () => process.env.API_KEY || '';
 
-// 1. The Router Function: Decides which agent to call
+// 1. Router: Menganalisis Intent dan Memilih Agen
 export const routeUserIntent = async (userMessage: string): Promise<AgentType> => {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("API Key missing");
 
   const ai = new GoogleGenAI({ apiKey });
   
-  // We use a lighter model for routing logic
+  // Menggunakan model flash untuk kecepatan routing
   const modelId = 'gemini-2.5-flash'; 
 
   try {
@@ -22,32 +21,38 @@ export const routeUserIntent = async (userMessage: string): Promise<AgentType> =
       config: {
         systemInstruction: AGENTS[AgentType.NAVIGATOR].systemInstruction,
         tools: [{ functionDeclarations: ROUTER_TOOLS }],
-        temperature: 0.1, // Low temp for deterministic routing
+        temperature: 0.0, // Deterministik, kita hanya butuh function call
       }
     });
 
     const calls = response.functionCalls;
     
+    // Mapping nama fungsi dari prompt ke AgentType internal
     if (calls && calls.length > 0) {
       const functionName = calls[0].name;
+      console.log("Router decided:", functionName);
+      
       switch (functionName) {
-        case 'delegate_to_patient_agent': return AgentType.PATIENT_INFO;
-        case 'delegate_to_appointment_agent': return AgentType.APPOINTMENT;
-        case 'delegate_to_records_agent': return AgentType.MEDICAL_RECORDS;
-        case 'delegate_to_billing_agent': return AgentType.BILLING;
-        default: return AgentType.PATIENT_INFO; // Default fallback
+        case 'Patient_Information_Agent': return AgentType.PATIENT_INFO;
+        case 'Appointment_Scheduler': return AgentType.APPOINTMENT;
+        case 'Medical_Records_Agent': return AgentType.MEDICAL_RECORDS;
+        case 'Billing_And_Insurance_Agent': return AgentType.BILLING;
+        default: return AgentType.PATIENT_INFO;
       }
     }
 
-    // If no function called (rare given instructions), default based on keywords or fallback
+    // Jika tidak ada function call (fallback), default ke Patient Info atau Navigator lagi
+    // Idealnya ini tidak terjadi jika prompt kuat
+    console.warn("No function call detected, defaulting to PATIENT_INFO");
     return AgentType.PATIENT_INFO;
   } catch (error) {
     console.error("Routing Error:", error);
-    return AgentType.PATIENT_INFO; // Fail safe
+    // Jika gagal routing, kembalikan ke Info Pasien sebagai fallback aman
+    return AgentType.PATIENT_INFO; 
   }
 };
 
-// 2. The Execution Function: Runs the specific agent
+// 2. Executor: Menjalankan Sub-Agen Spesialis
 export const runSpecialistAgent = async (
   agentType: AgentType,
   history: Message[],
@@ -59,7 +64,7 @@ export const runSpecialistAgent = async (
   const ai = new GoogleGenAI({ apiKey });
   const agentConfig = AGENTS[agentType];
 
-  // Configure tools for this specific agent
+  // Konfigurasi Tools berdasarkan tabel "Alat Wajib Digunakan"
   const tools: Tool[] = [];
   
   if (agentConfig.supportsSearch) {
@@ -70,22 +75,22 @@ export const runSpecialistAgent = async (
     tools.push({ functionDeclarations: [DOC_GEN_TOOL] });
   }
 
-  // Convert app history to Gemini format (simplification for demo: taking last few turns + current)
-  // In production, we'd map the full history properly
-  const chatContext = history.slice(-6).map(msg => ({
-    role: msg.role === 'user' ? 'user' : 'model',
-    parts: [{ text: msg.text }]
-  }));
+  // Format history untuk Gemini
+  const chatContext = history
+    .filter(msg => msg.role !== 'system') // Filter pesan error sistem
+    .slice(-10) // Ambil 10 pesan terakhir untuk konteks
+    .map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.text }]
+    }));
 
-  // Add the current user message
+  // Tambahkan pesan user saat ini
   chatContext.push({
     role: 'user',
     parts: [{ text: userMessage }]
   });
 
   try {
-    // We use a stronger model for the actual conversation/reasoning
-    // Using gemini-2.5-flash for speed/efficiency, or pro for complex logic
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: chatContext,
@@ -98,21 +103,24 @@ export const runSpecialistAgent = async (
     let finalText = response.text || "";
     let generatedDocument = undefined;
 
-    // Check for Function Calls (Internal Agent Tools like DocGen)
+    // Cek Function Call untuk Generate Document
     if (response.functionCalls && response.functionCalls.length > 0) {
       for (const call of response.functionCalls) {
         if (call.name === 'generate_document') {
-           const docType = (call.args as any).documentType || 'Dokumen';
-           generatedDocument = `${docType}.pdf`;
-           // We append a confirmation to the text if the model didn't provide one
+           const args = call.args as any;
+           const docType = args.documentType || 'Dokumen';
+           const format = args.format || 'PDF';
+           generatedDocument = `${docType}.${format.toLowerCase()}`;
+           
+           // Jika model tidak memberikan teks pengantar (hanya func call), tambahkan manual
            if (!finalText) {
-             finalText = `Saya telah membuat dokumen ${docType} untuk Anda. Silakan unduh di bawah ini.`;
+             finalText = `Baik, saya telah membuat dokumen **${docType}** dalam format **${format}** untuk Anda.`;
            }
         }
       }
     }
 
-    // Extract Grounding (Search Results)
+    // Ekstrak Grounding (Google Search)
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
     let groundingUrls: any[] = [];
     if (groundingChunks) {
@@ -130,7 +138,7 @@ export const runSpecialistAgent = async (
   } catch (error) {
     console.error(`Agent ${agentType} Error:`, error);
     return {
-      text: "Maaf, saya mengalami kesulitan memproses permintaan Anda saat ini.",
+      text: "Maaf, sistem sedang sibuk atau mengalami gangguan koneksi. Silakan coba sesaat lagi.",
     };
   }
 };
