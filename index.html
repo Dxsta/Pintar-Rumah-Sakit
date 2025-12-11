@@ -43,16 +43,17 @@
       }
     </style>
     
-    <!-- CRITICAL FIX: Polyfill for process.env to prevent "process is not defined" crash in browser -->
+    <!-- CRITICAL FIX: Polyfill for process.env to prevent "process is not defined" crash in browser/Netlify -->
     <script>
       window.process = {
         env: {
           NODE_ENV: 'production'
-          // API_KEY will be injected here by the build tool or remain undefined (handled in App.tsx)
+          // API_KEY is handled via environment variables in build tools or manual injection
         }
       };
     </script>
 
+    <!-- CRITICAL FIX: Removed mixed React 18 and 19 versions. Sticking to 18.2.0 for stability. -->
     <script type="importmap">
 {
   "imports": {

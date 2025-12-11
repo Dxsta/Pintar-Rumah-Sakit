@@ -35,11 +35,17 @@ export default function App() {
   }, []);
 
   const handleSend = async () => {
-    // Check for API Key first
-    if (!process.env.API_KEY) {
-      alert("API Key is missing. Please set the API_KEY environment variable.");
+    // --- API KEY CHECK START ---
+    // Memeriksa apakah API Key tersedia. Jika tidak, tampilkan alert.
+    // Di Netlify, pastikan Environment Variable 'API_KEY' sudah diset.
+    // Di development lokal, pastikan file .env ada atau diset di environment.
+    const apiKey = typeof process !== 'undefined' && process.env ? process.env.API_KEY : null;
+    
+    if (!apiKey) {
+      alert("API Key tidak ditemukan! Harap konfigurasikan 'API_KEY' di environment variables (Settings > Build & deploy > Environment > Environment variables di Netlify).");
       return;
     }
+    // --- API KEY CHECK END ---
 
     if (!input.trim()) {
       return;
